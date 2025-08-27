@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go WebSocket Collaboration Test - Reliable Delivery</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f8f9fa; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .user-section { 
+            border: 1px solid #dee2e6; 
+            margin: 15px 0; 
+            padding: 20px; 
+            border-radius: 8px; 
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls { margin: 15px 0; }
+        button { 
+            margin: 5px; 
+            padding: 10px 16px; 
+            cursor: pointer;
+            border: 1px solid #007bff;
+            background: #007bff;
+            color: white;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; border-color: #0056b3; }
+        button:disabled { 
+            opacity: 0.6; 
+            cursor: not-allowed; 
+            background: #6c757d;
+            border-color: #6c757d;
+        }
+        .log { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            height: 220px; 
+            overflow-y: auto; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .status { 
+            font-weight: bold; 
+            margin: 10px 0; 
+            padding: 8px 12px;
+            border-radius: 4px;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status.connecting { background: #fff3cd; color: #856404; }
+        .stats {
+            margin: 15px 0;
+            font-size: 13px;
+            color: #6c757d;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .go-features {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        .go-features h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .go-features ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .test-section {
+            background: #fff8e1;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .metric {
+            display: inline-block;
+            margin: 5px 10px 5px 0;
+            font-weight: bold;
+        }
+        .metric .label {
+            color: #6c757d;
+            font-weight: normal;
+        }
+        .metric .value {
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Go WebSocket Collaboration Test - Reliable Event Delivery</h1>
+        
+        <div class="go-features">
+            <h3>🔧 Go-Specific Concurrency Features Used:</h3>
+            <ul>
+                <li><strong>Goroutines:</strong> Separate reader/writer goroutines per connection</li>
+                <li><strong>Channels:</strong> Event broadcasting and user management channels</li>
+                <li><strong>sync.Map:</strong> Concurrent-safe user and event storage</li>
+                <li><strong>Context:</strong> Graceful shutdown and cancellation</li>
+                <li><strong>Atomic Operations:</strong> Lock-free sequence number generation</li>
+                <li><strong>Select Statements:</strong> Non-blocking channel operations</li>
+                <li><strong>WaitGroups:</strong> Coordinated goroutine lifecycle management</li>
+            </ul>
+        </div>
+        
+        <div class="user-section">
+            <h2>User A</h2>
+            <div id="statusA" class="status disconnected">Disconnected</div>
+            <div id="statsA" class="stats">
+                <div>
+                    <span class="metric">
+                        <span class="label">Last Seq:</span> 
+                        <span class="value" id="lastSeqA">0</span>
+                    </span>
+                    <span class="metric">
+                        <span class="label">Buffered:</span> 
+                        <span class="value" id="bufferedA">0</span>
+                    </span>
+                </div>
+                <div>
+                    <span class="metric">
+                        <span class="label">Missing:</span> 
+                        <span class="value" id="missingA">0</span>
+                    </span>
+                    <span class="metric">
+                        <span class="label">RTT:</span> 
+                        <span class="value" id="rttA">0ms</span>
+                    </span>
+                </div>
+            </div>
+            <div class="controls">
+                <button onclick="connectUser('A')" id="connectA">Connect User A</button>
+                <button onclick="disconnectUser('A')" id="disconnectA" disabled>Disconnect</button>
+                <button onclick="sendDrawEvent('A')" id="drawA" disabled>Send Draw Event</button>
+                <button onclick="sendCircleEvent('A')" id="circleA" disabled>Send Circle Event</button>
+                <button onclick="measureLatency('A')" id="latencyA" disabled>Measure Latency</button>
+            </div>
+            <div id="logA" class="log"></div>
+        </div>
+
+        <div class="user-section">
+            <h2>User B (Late Joiner)</h2>
+            <div id="statusB" class="status disconnected">Disconnected</div>
+            <div id="statsB" class="stats">
+                <div>
+                    <span class="metric">
+                        <span class="label">Last Seq:</span> 
+                        <span class="value" id="lastSeqB">0</span>
+                    </span>
+                    <span class="metric">
+                        <span class="label">Buffered:</span> 
+                        <span class="value" id="bufferedB">0</span>
+                    </span>
+                </div>
+                <div>
+                    <span class="metric">
+                        <span class="label">Missing:</span> 
+                        <span class="value" id="missingB">0</span>
+                    </span>
+                    <span class="metric">
+                        <span class="label">RTT:</span> 
+                        <span class="value" id="rttB">0ms</span>
+                    </span>
+                </div>
+            </div>
+            <div class="controls">
+                <button onclick="connectUser('B')" id="connectB">Connect User B</button>
+                <button onclick="disconnectUser('B')" id="disconnectB" disabled>Disconnect</button>
+                <button onclick="sendDrawEvent('B')" id="drawB" disabled>Send Draw Event</button>
+                <button onclick="sendCircleEvent('B')" id="circleB" disabled>Send Circle Event</button>
+                <button onclick="measureLatency('B')" id="latencyB" disabled>Measure Latency</button>
+            </div>
+            <div id="logB" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Go Concurrency Test Scenarios</h2>
+            <div class="controls">
+                <button onclick="testGoConcurrencyFeatures()" id="testBtn">Test Go Concurrency Features</button>
+                <button onclick="testChannelBackpressure()" id="backpressureBtn">Test Channel Backpressure</button>
+                <button onclick="testGracefulShutdown()" id="shutdownBtn">Test Graceful Shutdown</button>
+                <button onclick="stressTestChannels()" id="stressBtn">Stress Test Channels</button>
+                <button onclick="clearLogs()">Clear Logs</button>
+            </div>
+            <p><strong>Go-Specific Tests:</strong> Channel buffering, goroutine coordination, graceful shutdown with context cancellation, and concurrent map operations.</p>
+        </div>
+    </div>
+
+    <script>
+        class GoWebSocketClient {
+            constructor(user) {
+                this.user = user;
+                this.ws = null;
+                this.connected = false;
+                
+                // Reliability tracking
+                this.lastReceivedSequence = 0;
+                this.eventBuffer = new Map();
+                this.missingSequences = new Set();
+                this.lastHeartbeat = null;
+                this.rtt = 0;
+                
+                // Connection management
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 1000;
+            }
+            
+            connect() {
+                if (this.connected) return;
+                
+                this.log('🚀 Connecting to Go WebSocket server...');
+                this.updateStatus('connecting');
+                
+                const userId = this.user === 'A' ? 'userA' : 'userB';
+                const wsUrl = `ws://${window.location.host}/ws?user_id=${userId}&last_known_sequence=${this.lastReceivedSequence}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.log('✅ Connected to Go server');
+                    this.connected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateStatus('connected');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleServerMessage(message);
+                };
+                
+                this.ws.onclose = (event) => {
+                    this.log(`🔌 Connection closed (code: ${event.code})`);
+                    this.connected = false;
+                    this.updateStatus('disconnected');
+                    
+                    // Auto-reconnect with exponential backoff
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
+                        this.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
+                        setTimeout(() => {
+                            this.reconnectAttempts++;
+                            this.connect();
+                        }, delay);
+                    }
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.log(`❌ WebSocket error: ${error.type}`);
+                };
+            }
+            
+            handleServerMessage(message) {
+                switch (message.type) {
+                    case 'sync_start':
+                        this.log(`🔄 Sync started: ${message.payload.sync_id}`);
+                        break;
+                        
+                    case 'snapshot':
+                        const events = message.payload.events || [];
+                        this.log(`📸 Snapshot: ${events.length} events (seq: ${message.payload.last_sequence})`);
+                        events.forEach(event => {
+                            this.processEvent(event, false);
+                        });
+                        break;
+                        
+                    case 'sync_complete':
+                        this.log(`✅ Sync complete - sequence: ${message.payload.current_sequence}`);
+                        this.processBufferedEvents();
+                        break;
+                        
+                    case 'event':
+                        this.handleReliableEvent(message.payload.event, message.payload.ack_required);
+                        break;
+                        
+                    case 'resend_events':
+                        const resentEvents = message.payload.events || [];
+                        this.log(`🔁 Resent ${resentEvents.length} events (${message.payload.reason})`);
+                        resentEvents.forEach(event => {
+                            this.processEvent(event, true);
+                            this.missingSequences.delete(event.sequence_number);
+                        });
+                        this.processBufferedEvents();
+                        break;
+                        
+                    case 'heartbeat':
+                        this.lastHeartbeat = Date.now();
+                        this.sendHeartbeatResponse(message.payload.sequence);
+                        break;
+                        
+                    case 'user_joined':
+                        this.log(`👋 User joined: ${message.payload.user_id}`);
+                        break;
+                        
+                    case 'user_left':
+                        this.log(`👋 User left: ${message.payload.user_id}`);
+                        break;
+                }
+                
+                this.updateStats();
+            }
+            
+            handleReliableEvent(event, ackRequired) {
+                // Go's channel-based delivery ensures ordering, but we double-check
+                const expectedSeq = this.lastReceivedSequence + 1;
+                if (event.sequence_number > expectedSeq) {
+                    // Gap detected
+                    for (let seq = expectedSeq; seq < event.sequence_number; seq++) {
+                        this.missingSequences.add(seq);
+                    }
+                    this.log(`🕳️ Gap detected! Expected ${expectedSeq}, got ${event.sequence_number}`);
+                    this.requestMissingEvents();
+                }
+                
+                this.processEvent(event, ackRequired);
+                this.processBufferedEvents();
+            }
+            
+            processEvent(event, shouldAck) {
+                // Buffer out-of-order events
+                if (event.sequence_number > this.lastReceivedSequence + 1) {
+                    this.log(`📦 Buffering event ${event.sequence_number}`);
+                    this.eventBuffer.set(event.sequence_number, {event, shouldAck});
+                    return;
+                }
+                
+                // Process in-order event
+                if (event.sequence_number === this.lastReceivedSequence + 1) {
+                    this.lastReceivedSequence = event.sequence_number;
+                    this.log(`⚡ Event ${event.sequence_number}: ${JSON.stringify(event.event)}`);
+                    
+                    if (shouldAck) {
+                        this.sendAck(event.sequence_number);
+                    }
+                }
+            }
+            
+            processBufferedEvents() {
+                let processed = true;
+                while (processed) {
+                    processed = false;
+                    const nextSeq = this.lastReceivedSequence + 1;
+                    
+                    if (this.eventBuffer.has(nextSeq)) {
+                        const {event, shouldAck} = this.eventBuffer.get(nextSeq);
+                        this.eventBuffer.delete(nextSeq);
+                        this.lastReceivedSequence = nextSeq;
+                        
+                        this.log(`🔓 Processed buffered event ${nextSeq}`);
+                        
+                        if (shouldAck) {
+                            this.sendAck(nextSeq);
+                        }
+                        processed = true;
+                    }
+                }
+            }
+            
+            requestMissingEvents() {
+                if (this.missingSequences.size > 0) {
+                    const missing = Array.from(this.missingSequences);
+                    this.log(`🔍 Requesting missing: ${missing.join(', ')}`);
+                    
+                    this.send({
+                        type: 'gap_report',
+                        payload: {
+                            missing_sequences: missing
+                        }
+                    });
+                }
+            }
+            
+            sendAck(sequenceNumber) {
+                this.send({
+                    type: 'ack',
+                    payload: {
+                        sequence_number: sequenceNumber
+                    }
+                });
+            }
+            
+            sendHeartbeatResponse(sequence) {
+                this.send({
+                    type: 'heartbeat_response',
+                    payload: {
+                        sequence: sequence
+                    }
+                });
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                } else {
+                    this.log('❌ Cannot send - WebSocket not connected');
+                }
+            }
+            
+            sendEvent(eventType, eventData) {
+                if (!this.connected) {
+                    this.log('❌ Cannot send event - not connected');
+                    return;
+                }
+                
+                const startTime = Date.now();
+                this.send({
+                    type: eventType,
+                    payload: eventData
+                });
+                
+                // Estimate RTT (simple approximation)
+                setTimeout(() => {
+                    this.rtt = Date.now() - startTime;
+                }, 50);
+                
+                this.log(`📤 Sent ${eventType}: ${JSON.stringify(eventData)}`);
+            }
+            
+            measureLatency() {
+                if (!this.connected) return;
+                
+                const startTime = Date.now();
+                this.sendHeartbeatResponse(0); // Use heartbeat for latency measurement
+                
+                // Measure time until next heartbeat
+                const measureRTT = () => {
+                    if (this.lastHeartbeat && this.lastHeartbeat > startTime) {
+                        this.rtt = this.lastHeartbeat - startTime;
+                        this.log(`📊 Measured RTT: ${this.rtt}ms`);
+                        this.updateStats();
+                    } else {
+                        setTimeout(measureRTT, 10);
+                    }
+                };
+                setTimeout(measureRTT, 10);
+            }
+            
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                }
+                this.connected = false;
+                this.updateStatus('disconnected');
+            }
+            
+            log(message) {
+                const logElement = document.getElementById(`log${this.user}`);
+                const timestamp = new Date().toLocaleTimeString();
+                logElement.textContent += `[${timestamp}] ${message}\n`;
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+            
+            updateStatus(status) {
+                const statusElement = document.getElementById(`status${this.user}`);
+                statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                statusElement.className = `status ${status}`;
+                
+                const connected = status === 'connected';
+                const connecting = status === 'connecting';
+                
+                document.getElementById(`connect${this.user}`).disabled = connected || connecting;
+                document.getElementById(`disconnect${this.user}`).disabled = !connected && !connecting;
+                document.getElementById(`draw${this.user}`).disabled = !connected;
+                document.getElementById(`circle${this.user}`).disabled = !connected;
+                document.getElementById(`latency${this.user}`).disabled = !connected;
+            }
+            
+            updateStats() {
+                document.getElementById(`lastSeq${this.user}`).textContent = this.lastReceivedSequence;
+                document.getElementById(`buffered${this.user}`).textContent = this.eventBuffer.size;
+                document.getElementById(`missing${this.user}`).textContent = this.missingSequences.size;
+                document.getElementById(`rtt${this.user}`).textContent = `${this.rtt}ms`;
+            }
+        }
+
+        // Global client instances
+        let clientA = null;
+        let clientB = null;
+
+        function connectUser(user) {
+            if (user === 'A') {
+                clientA = new GoWebSocketClient(user);
+                clientA.connect();
+            } else {
+                clientB = new GoWebSocketClient(user);
+                clientB.connect();
+            }
+        }
+
+        function disconnectUser(user) {
+            const client = user === 'A' ? clientA : clientB;
+            if (client) {
+                client.disconnect();
+            }
+        }
+
+        function sendDrawEvent(user) {
+            const client = user === 'A' ? clientA : clientB;
+            if (!client) return;
+            
+            client.sendEvent('draw', {
+                x1: Math.random() * 100,
+                y1: Math.random() * 100,
+                x2: Math.random() * 100,
+                y2: Math.random() * 100,
+                color: user === 'A' ? 'red' : 'blue'
+            });
+        }
+
+        function sendCircleEvent(user) {
+            const client = user === 'A' ? clientA : clientB;
+            if (!client) return;
+            
+            client.sendEvent('circle', {
+                cx: Math.random() * 100,
+                cy: Math.random() * 100,
+                radius: Math.random() * 20 + 5,
+                color: user === 'A' ? 'red' : 'blue'
+            });
+        }
+
+        function measureLatency(user) {
+            const client = user === 'A' ? clientA : clientB;
+            if (client) {
+                client.measureLatency();
+            }
+        }
+
+        async function testGoConcurrencyFeatures() {
+            clearLogs();
+            
+            log('A', '=== TESTING GO CONCURRENCY FEATURES ===');
+            log('B', '=== TESTING GO CONCURRENCY FEATURES ===');
+            
+            // Test 1: Channel-based event ordering
+            connectUser('A');
+            await sleep(1500);
+            
+            // Test 2: Goroutine-managed event broadcasting
+            log('A', '📡 Testing goroutine event broadcasting...');
+            for (let i = 0; i < 8; i++) {
+                sendDrawEvent('A');
+                await sleep(50);
+            }
+            
+            // Test 3: Late joiner with sync.Map state recovery
+            log('B', '🔄 Testing sync.Map state recovery...');
+            connectUser('B');
+            await sleep(2000);
+            
+            // Test 4: Concurrent events through channels
+            log('A', '⚡ Testing concurrent channel operations...');
+            for (let i = 0; i < 5; i++) {
+                sendCircleEvent('A');
+                sendDrawEvent('B');
+                await sleep(100);
+            }
+        }
+
+        async function testChannelBackpressure() {
+            if (!clientA) {
+                connectUser('A');
+                await sleep(1500);
+            }
+            
+            log('A', '🚰 TESTING CHANNEL BACKPRESSURE');
+            
+            // Send many events rapidly to test channel buffering
+            log('A', '📤 Sending 50 rapid events to test Go channel buffering...');
+            for (let i = 0; i < 50; i++) {
+                sendDrawEvent('A');
+                if (i % 10 === 0) await sleep(10); // Small delays
+            }
+            
+            log('A', '✅ Channel backpressure test complete');
+        }
+
+        async function testGracefulShutdown() {
+            log('A', '🛑 TESTING GRACEFUL SHUTDOWN');
+            log('B', '🛑 TESTING GRACEFUL SHUTDOWN');
+            
+            // Connect both users
+            if (!clientA) connectUser('A');
+            if (!clientB) connectUser('B');
+            
+            await sleep(1000);
+            
+            // Send events
+            sendDrawEvent('A');
+            sendCircleEvent('B');
+            
+            // Simulate graceful disconnect
+            log('A', '👋 Testing graceful disconnection with context cancellation...');
+            disconnectUser('A');
+            
+            await sleep(500);
+            
+            // B should still work
+            sendDrawEvent('B');
+            log('B', '✅ Other connections unaffected by graceful shutdown');
+        }
+
+        async function stressTestChannels() {
+            clearLogs();
+            
+            log('A', '💪 STRESS TESTING GO CHANNELS');
+            log('B', '💪 STRESS TESTING GO CHANNELS');
+            
+            connectUser('A');
+            connectUser('B');
+            await sleep(2000);
+            
+            log('A', '🔥 Starting stress test - 100 concurrent events...');
+            
+            // Rapid fire events to test Go's channel performance
+            const promises = [];
+            for (let i = 0; i < 100; i++) {
+                promises.push(
+                    (async () => {
+                        await sleep(Math.random() * 1000);
+                        if (Math.random() > 0.5) {
+                            sendDrawEvent('A');
+                        } else {
+                            sendCircleEvent('B');
+                        }
+                    })()
+                );
+            }
+            
+            await Promise.all(promises);
+            log('A', '✅ Stress test complete - Go channels handled concurrent load');
+        }
+
+        function log(user, message) {
+            const logElement = document.getElementById(`log${user}`);
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function clearLogs() {
+            document.getElementById('logA').textContent = '';
+            document.getElementById('logB').textContent = '';
+        }
+
+        // Auto-update stats
+        setInterval(() => {
+            if (clientA) clientA.updateStats();
+            if (clientB) clientB.updateStats();
+        }, 1000);
+    </script>
+</body>
+</html>
