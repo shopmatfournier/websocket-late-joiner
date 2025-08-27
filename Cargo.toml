@@ -3,6 +3,14 @@ name = "collaborative-websocket"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "basic"
+path = "src/main.rs"
+
+[[bin]]
+name = "reliable"
+path = "src/reliable_main.rs"
+
 [dependencies]
 axum = { version = "0.7", features = ["ws", "macros"] }
 tokio = { version = "1.0", features = ["full"] }
