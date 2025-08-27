@@ -4,210 +4,256 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Collaboration Test</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         .user-section { border: 1px solid #ccc; margin: 10px 0; padding: 15px; }
         .controls { margin: 10px 0; }
-        button { margin: 5px; padding: 8px 12px; }
-        .log { background: #f5f5f5; padding: 10px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-        .status { font-weight: bold; margin: 5px 0; }
+        button { 
+            margin: 5px; 
+            padding: 8px 12px; 
+            cursor: pointer;
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        button:hover { background: #e9e9e9; }
+        button:disabled { 
+            opacity: 0.6; 
+            cursor: not-allowed; 
+            background: #f5f5f5;
+        }
+        .log { 
+            background: #f5f5f5; 
+            padding: 10px; 
+            height: 200px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status { 
+            font-weight: bold; 
+            margin: 5px 0; 
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
     </style>
 </head>
-<body>
+<body x-data="collaborationApp()">
     <h1>Collaborative WebSocket Test - Late Joiner Problem Demo</h1>
     
-    <div class="user-section">
+    <div class="user-section" x-data="{ user: users.A }">
         <h2>User A</h2>
-        <div class="status" id="statusA">Disconnected</div>
-        <div class="controls">
-            <button onclick="connectUserA()">Connect User A</button>
-            <button onclick="disconnectUserA()">Disconnect</button>
-            <button onclick="sendDrawEvent('A')">Send Draw Event</button>
-            <button onclick="sendCircleEvent('A')">Send Circle Event</button>
+        <div class="status" 
+             :class="{ 'connected': user.connected, 'disconnected': !user.connected }"
+             x-text="user.connected ? 'Connected' : 'Disconnected'">
         </div>
-        <div class="log" id="logA"></div>
+        <div class="controls">
+            <button @click="connectUser('A')" :disabled="user.connected">
+                Connect User A
+            </button>
+            <button @click="disconnectUser('A')" :disabled="!user.connected">
+                Disconnect
+            </button>
+            <button @click="sendDrawEvent('A')" :disabled="!user.connected">
+                Send Draw Event
+            </button>
+            <button @click="sendCircleEvent('A')" :disabled="!user.connected">
+                Send Circle Event
+            </button>
+        </div>
+        <div class="log" x-html="user.log" x-ref="logA" x-effect="$refs.logA.scrollTop = $refs.logA.scrollHeight"></div>
     </div>
 
-    <div class="user-section">
+    <div class="user-section" x-data="{ user: users.B }">
         <h2>User B (Late Joiner)</h2>
-        <div class="status" id="statusB">Disconnected</div>
-        <div class="controls">
-            <button onclick="connectUserB()">Connect User B</button>
-            <button onclick="disconnectUserB()">Disconnect</button>
-            <button onclick="sendDrawEvent('B')">Send Draw Event</button>
-            <button onclick="sendCircleEvent('B')">Send Circle Event</button>
+        <div class="status" 
+             :class="{ 'connected': user.connected, 'disconnected': !user.connected }"
+             x-text="user.connected ? 'Connected' : 'Disconnected'">
         </div>
-        <div class="log" id="logB"></div>
+        <div class="controls">
+            <button @click="connectUser('B')" :disabled="user.connected">
+                Connect User B
+            </button>
+            <button @click="disconnectUser('B')" :disabled="!user.connected">
+                Disconnect
+            </button>
+            <button @click="sendDrawEvent('B')" :disabled="!user.connected">
+                Send Draw Event
+            </button>
+            <button @click="sendCircleEvent('B')" :disabled="!user.connected">
+                Send Circle Event
+            </button>
+        </div>
+        <div class="log" x-html="user.log" x-ref="logB" x-effect="$refs.logB.scrollTop = $refs.logB.scrollHeight"></div>
     </div>
 
     <div class="user-section">
         <h2>Test Scenarios</h2>
-        <button onclick="testLateJoinerProblem()">Test Late Joiner Problem</button>
-        <button onclick="clearLogs()">Clear Logs</button>
+        <button @click="testLateJoinerProblem()" :disabled="testInProgress">
+            <span x-show="!testInProgress">Test Late Joiner Problem</span>
+            <span x-show="testInProgress">Running Test...</span>
+        </button>
+        <button @click="clearLogs()">Clear Logs</button>
     </div>
 
     <script>
-        let wsA = null;
-        let wsB = null;
+        function collaborationApp() {
+            return {
+                testInProgress: false,
+                websockets: {
+                    A: null,
+                    B: null
+                },
+                users: {
+                    A: {
+                        connected: false,
+                        log: ''
+                    },
+                    B: {
+                        connected: false,
+                        log: ''
+                    }
+                },
 
-        function log(user, message) {
-            const logElement = document.getElementById(`log${user}`);
-            const timestamp = new Date().toLocaleTimeString();
-            logElement.innerHTML += `[${timestamp}] ${message}\n`;
-            logElement.scrollTop = logElement.scrollHeight;
-        }
+                init() {
+                    // Alpine.js initialization if needed
+                },
 
-        function updateStatus(user, status) {
-            document.getElementById(`status${user}`).textContent = status;
-        }
+                log(user, message) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const logEntry = `[${timestamp}] ${message}<br>`;
+                    this.users[user].log += logEntry;
+                },
 
-        function connectUserA() {
-            if (wsA) return;
-            
-            wsA = new WebSocket(`ws://${window.location.host}/ws?user_id=userA`);
-            
-            wsA.onopen = () => {
-                log('A', 'Connected to server');
-                updateStatus('A', 'Connected');
-            };
-            
-            wsA.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                log('A', `Received: ${JSON.stringify(data)}`);
-            };
-            
-            wsA.onclose = () => {
-                log('A', 'Disconnected from server');
-                updateStatus('A', 'Disconnected');
-                wsA = null;
-            };
-            
-            wsA.onerror = (error) => {
-                log('A', `Error: ${error}`);
-            };
-        }
+                connectUser(user) {
+                    if (this.websockets[user]) return;
+                    
+                    const userId = user === 'A' ? 'userA' : 'userB';
+                    this.websockets[user] = new WebSocket(`ws://${window.location.host}/ws?user_id=${userId}`);
+                    
+                    this.websockets[user].onopen = () => {
+                        this.log(user, 'Connected to server');
+                        this.users[user].connected = true;
+                    };
+                    
+                    this.websockets[user].onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        this.log(user, `Received: ${JSON.stringify(data)}`);
+                    };
+                    
+                    this.websockets[user].onclose = () => {
+                        this.log(user, 'Disconnected from server');
+                        this.users[user].connected = false;
+                        this.websockets[user] = null;
+                    };
+                    
+                    this.websockets[user].onerror = (error) => {
+                        this.log(user, `Error: ${error}`);
+                    };
+                },
 
-        function connectUserB() {
-            if (wsB) return;
-            
-            wsB = new WebSocket(`ws://${window.location.host}/ws?user_id=userB`);
-            
-            wsB.onopen = () => {
-                log('B', 'Connected to server');
-                updateStatus('B', 'Connected');
-            };
-            
-            wsB.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                log('B', `Received: ${JSON.stringify(data)}`);
-            };
-            
-            wsB.onclose = () => {
-                log('B', 'Disconnected from server');
-                updateStatus('B', 'Disconnected');
-                wsB = null;
-            };
-            
-            wsB.onerror = (error) => {
-                log('B', `Error: ${error}`);
-            };
-        }
+                disconnectUser(user) {
+                    if (this.websockets[user]) {
+                        this.websockets[user].close();
+                    }
+                },
 
-        function disconnectUserA() {
-            if (wsA) {
-                wsA.close();
+                sendDrawEvent(user) {
+                    const ws = this.websockets[user];
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        this.log(user, 'Not connected!');
+                        return;
+                    }
+                    
+                    const event = {
+                        type: 'draw',
+                        x1: Math.random() * 100,
+                        y1: Math.random() * 100,
+                        x2: Math.random() * 100,
+                        y2: Math.random() * 100,
+                        color: user === 'A' ? 'red' : 'blue'
+                    };
+                    
+                    ws.send(JSON.stringify(event));
+                    this.log(user, `Sent draw event: ${JSON.stringify(event)}`);
+                },
+
+                sendCircleEvent(user) {
+                    const ws = this.websockets[user];
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        this.log(user, 'Not connected!');
+                        return;
+                    }
+                    
+                    const event = {
+                        type: 'circle',
+                        cx: Math.random() * 100,
+                        cy: Math.random() * 100,
+                        radius: Math.random() * 20 + 5,
+                        color: user === 'A' ? 'red' : 'blue'
+                    };
+                    
+                    ws.send(JSON.stringify(event));
+                    this.log(user, `Sent circle event: ${JSON.stringify(event)}`);
+                },
+
+                async testLateJoinerProblem() {
+                    this.testInProgress = true;
+                    this.clearLogs();
+                    
+                    this.log('A', '=== STARTING LATE JOINER TEST ===');
+                    this.log('B', '=== STARTING LATE JOINER TEST ===');
+                    
+                    try {
+                        // Step 1: Connect User A
+                        this.log('A', 'Step 1: Connecting User A...');
+                        this.connectUser('A');
+                        await this.sleep(1000);
+                        
+                        // Step 2: User A sends some events
+                        this.log('A', 'Step 2: User A sends events...');
+                        this.sendDrawEvent('A');
+                        await this.sleep(200);
+                        this.sendCircleEvent('A');
+                        await this.sleep(200);
+                        this.sendDrawEvent('A');
+                        
+                        // Step 3: User B connects (late joiner)
+                        this.log('B', 'Step 3: User B connects as late joiner...');
+                        this.connectUser('B');
+                        
+                        // Step 4: User A continues sending events during B's connection
+                        this.log('A', 'Step 4: User A continues sending events during B connection...');
+                        setTimeout(() => this.sendDrawEvent('A'), 50);
+                        setTimeout(() => this.sendCircleEvent('A'), 150);
+                        
+                        await this.sleep(2000);
+                        
+                        // Step 5: Both users send events
+                        this.log('A', 'Step 5: Both users now active...');
+                        this.log('B', 'Step 5: Both users now active...');
+                        this.sendDrawEvent('A');
+                        this.sendCircleEvent('B');
+                    } finally {
+                        this.testInProgress = false;
+                    }
+                },
+
+                sleep(ms) {
+                    return new Promise(resolve => setTimeout(resolve, ms));
+                },
+
+                clearLogs() {
+                    this.users.A.log = '';
+                    this.users.B.log = '';
+                }
             }
-        }
-
-        function disconnectUserB() {
-            if (wsB) {
-                wsB.close();
-            }
-        }
-
-        function sendDrawEvent(user) {
-            const ws = user === 'A' ? wsA : wsB;
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log(user, 'Not connected!');
-                return;
-            }
-            
-            const event = {
-                type: 'draw',
-                x1: Math.random() * 100,
-                y1: Math.random() * 100,
-                x2: Math.random() * 100,
-                y2: Math.random() * 100,
-                color: user === 'A' ? 'red' : 'blue'
-            };
-            
-            ws.send(JSON.stringify(event));
-            log(user, `Sent draw event: ${JSON.stringify(event)}`);
-        }
-
-        function sendCircleEvent(user) {
-            const ws = user === 'A' ? wsA : wsB;
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log(user, 'Not connected!');
-                return;
-            }
-            
-            const event = {
-                type: 'circle',
-                cx: Math.random() * 100,
-                cy: Math.random() * 100,
-                radius: Math.random() * 20 + 5,
-                color: user === 'A' ? 'red' : 'blue'
-            };
-            
-            ws.send(JSON.stringify(event));
-            log(user, `Sent circle event: ${JSON.stringify(event)}`);
-        }
-
-        async function testLateJoinerProblem() {
-            clearLogs();
-            
-            log('A', '=== STARTING LATE JOINER TEST ===');
-            log('B', '=== STARTING LATE JOINER TEST ===');
-            
-            // Step 1: Connect User A
-            log('A', 'Step 1: Connecting User A...');
-            connectUserA();
-            await sleep(1000);
-            
-            // Step 2: User A sends some events
-            log('A', 'Step 2: User A sends events...');
-            sendDrawEvent('A');
-            await sleep(200);
-            sendCircleEvent('A');
-            await sleep(200);
-            sendDrawEvent('A');
-            
-            // Step 3: User B connects (late joiner)
-            log('B', 'Step 3: User B connects as late joiner...');
-            connectUserB();
-            
-            // Step 4: User A continues sending events during B's connection
-            log('A', 'Step 4: User A continues sending events during B connection...');
-            setTimeout(() => sendDrawEvent('A'), 50);
-            setTimeout(() => sendCircleEvent('A'), 150);
-            
-            await sleep(2000);
-            
-            // Step 5: Both users send events
-            log('A', 'Step 5: Both users now active...');
-            log('B', 'Step 5: Both users now active...');
-            sendDrawEvent('A');
-            sendCircleEvent('B');
-        }
-
-        function sleep(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
-
-        function clearLogs() {
-            document.getElementById('logA').innerHTML = '';
-            document.getElementById('logB').innerHTML = '';
         }
     </script>
 </body>
