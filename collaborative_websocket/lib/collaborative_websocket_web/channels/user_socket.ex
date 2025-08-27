@@ -8,6 +8,7 @@ defmodule CollaborativeWebsocketWeb.UserSocket do
 
   ## Channels
   channel "session:*", CollaborativeWebsocketWeb.SessionChannel
+  channel "reliable_session:*", CollaborativeWebsocketWeb.ReliableSessionChannel
 
   # Socket params are passed from the client and can
   # be used to verify and authenticate a user. After

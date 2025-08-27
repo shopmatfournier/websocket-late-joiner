@@ -11,8 +11,14 @@ defmodule CollaborativeWebsocket.Application do
       CollaborativeWebsocketWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:collaborative_websocket, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: CollaborativeWebsocket.PubSub},
-      # Start our session state worker
+      # Start our session state workers
       CollaborativeWebsocket.SessionState,
+      CollaborativeWebsocket.ReliableSessionState,
+      # Start reliability monitoring agent
+      %{
+        id: CollaborativeWebsocket.ReliabilityMonitor,
+        start: {Agent, :start_link, [fn -> %{} end, [name: CollaborativeWebsocket.ReliabilityMonitor]]}
+      },
       # Start to serve requests, typically the last entry
       CollaborativeWebsocketWeb.Endpoint
     ]

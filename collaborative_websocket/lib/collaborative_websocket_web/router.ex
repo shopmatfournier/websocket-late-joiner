@@ -18,6 +18,7 @@ defmodule CollaborativeWebsocketWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/reliable", PageController, :reliable
   end
 
   # Other scopes may use custom stacks.
